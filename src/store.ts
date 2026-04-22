@@ -47,11 +47,13 @@ export interface Settings {
   showStopReason: boolean;
   showStopOverlay: boolean;
   strictHotkeyModifiers: boolean;
+  clickWhileHeld: boolean;
   theme: Theme;
 }
 
 export interface ClickerStatus {
   running: boolean;
+  armed: boolean;
   clickCount: number;
   lastError: string | null;
   stopReason: string | null;
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showStopReason: true,
   showStopOverlay: true,
   strictHotkeyModifiers: false,
+  clickWhileHeld: false,
   theme: "dark",
 };
 

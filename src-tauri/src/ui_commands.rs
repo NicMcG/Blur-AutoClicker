@@ -85,9 +85,14 @@ pub fn update_settings(
         || old.corner_stop_tr != settings.corner_stop_tr
         || old.corner_stop_bl != settings.corner_stop_bl
         || old.corner_stop_br != settings.corner_stop_br;
+    let click_while_held_disabled = old.click_while_held && !settings.click_while_held;
     drop(old);
 
     *state.settings.lock().unwrap() = settings.clone();
+
+    if click_while_held_disabled {
+        state.armed.store(false, Ordering::SeqCst);
+    }
 
     if !was_initialized {
         state.settings_initialized.store(true, Ordering::SeqCst);

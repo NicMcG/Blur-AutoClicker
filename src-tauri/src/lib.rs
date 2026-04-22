@@ -26,6 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(ClickerState {
             running: Arc::new(AtomicBool::new(false)),
+            armed: Arc::new(AtomicBool::new(false)),
             run_generation: AtomicU64::new(0),
             settings: Mutex::new(ClickerSettings::default()),
             last_error: Mutex::new(None),

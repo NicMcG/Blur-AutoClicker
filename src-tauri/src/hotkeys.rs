@@ -1,3 +1,4 @@
+use crate::engine::worker::emit_status;
 use crate::engine::worker::now_epoch_ms;
 use crate::engine::worker::start_clicker_inner;
 use crate::engine::worker::stop_clicker_inner;
@@ -10,7 +11,9 @@ use tauri::Manager;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetMessageW, SetWindowsHookExW, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG,
-    WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_MOUSEWHEEL, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN,
+    WM_SYSKEYUP,
 };
 
 /// Pseudo virtual-key codes for inputs that do not have a stable VK we can poll.
@@ -22,6 +25,15 @@ pub const VK_NUMPAD_ENTER_PSEUDO: i32 = -3;
 static SCROLL_UP_AT: AtomicU64 = AtomicU64::new(0);
 static SCROLL_DOWN_AT: AtomicU64 = AtomicU64::new(0);
 static NUMPAD_ENTER_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// Physical (non-injected) mouse button hold state, tracked by the low-level hook.
+/// Used by click-while-held so simulated clicks don't cancel themselves.
+static PHYSICAL_LBUTTON_DOWN: AtomicBool = AtomicBool::new(false);
+static PHYSICAL_MBUTTON_DOWN: AtomicBool = AtomicBool::new(false);
+static PHYSICAL_RBUTTON_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// MSLLHOOKSTRUCT.flags bit: event was injected by software.
+const LLMHF_INJECTED: u32 = 0x1;
 
 /// How long a scroll event is considered "pressed" for the polling loop.
 const SCROLL_WINDOW_MS: u64 = 200;
@@ -239,11 +251,14 @@ pub fn start_hotkey_listener(app: AppHandle) {
         let mut was_pressed = false;
 
         loop {
-            let (binding, strict) = {
+            let (binding, strict, click_while_held, mouse_button_str) = {
                 let state = app.state::<ClickerState>();
                 let binding = state.registered_hotkey.lock().unwrap().clone();
-                let strict = state.settings.lock().unwrap().strict_hotkey_modifiers;
-                (binding, strict)
+                let settings = state.settings.lock().unwrap();
+                let strict = settings.strict_hotkey_modifiers;
+                let click_while_held = settings.click_while_held;
+                let mouse_button_str = settings.mouse_button.clone();
+                (binding, strict, click_while_held, mouse_button_str)
             };
 
             let currently_pressed = binding
@@ -298,17 +313,56 @@ pub fn start_hotkey_listener(app: AppHandle) {
             }
 
             was_pressed = currently_pressed;
+
+            // Poll mouse button state for click-while-held mode
+            if click_while_held {
+                let state = app.state::<ClickerState>();
+                let armed = state.armed.load(Ordering::SeqCst);
+                let running = state.running.load(Ordering::SeqCst);
+                drop(state);
+
+                if armed {
+                    let mouse_held = match mouse_button_str.as_str() {
+                        "Right" => PHYSICAL_RBUTTON_DOWN.load(Ordering::SeqCst),
+                        "Middle" => PHYSICAL_MBUTTON_DOWN.load(Ordering::SeqCst),
+                        _ => PHYSICAL_LBUTTON_DOWN.load(Ordering::SeqCst),
+                    };
+
+                    if mouse_held && !running {
+                        let _ = start_clicker_inner(&app);
+                    } else if !mouse_held && running {
+                        let _ = stop_clicker_inner(&app, Some(String::from("Mouse button released")));
+                    }
+                } else if running {
+                    let _ = stop_clicker_inner(&app, Some(String::from("Disarmed")));
+                }
+            }
+
             std::thread::sleep(Duration::from_millis(12));
         }
     });
 }
 
 pub fn handle_hotkey_pressed(app: &AppHandle) {
-    let mode = {
+    let (mode, click_while_held) = {
         let state = app.state::<ClickerState>();
-        let mode = state.settings.lock().unwrap().mode.clone();
-        mode
+        let settings = state.settings.lock().unwrap();
+        (settings.mode.clone(), settings.click_while_held)
     };
+
+    if click_while_held && mode == "Toggle" {
+        let state = app.state::<ClickerState>();
+        let was_armed = state.armed.fetch_xor(true, Ordering::SeqCst);
+        drop(state);
+        if was_armed {
+            // Disarming: stop the clicker if it was running from mouse hold
+            let _ = stop_clicker_inner(app, Some(String::from("Disarmed")));
+        } else {
+            // Just armed: emit status so UI reflects the armed state
+            emit_status(app);
+        }
+        return;
+    }
 
     if mode == "Toggle" {
         let _ = toggle_clicker_inner(app);
@@ -318,14 +372,18 @@ pub fn handle_hotkey_pressed(app: &AppHandle) {
 }
 
 pub fn handle_hotkey_released(app: &AppHandle) {
-    let mode = {
+    let (mode, click_while_held) = {
         let state = app.state::<ClickerState>();
-        let mode = state.settings.lock().unwrap().mode.clone();
-        mode
+        let settings = state.settings.lock().unwrap();
+        (settings.mode.clone(), settings.click_while_held)
     };
 
     if mode == "Hold" {
         let _ = stop_clicker_inner(app, Some(String::from("Stopped from hold hotkey")));
+        if click_while_held {
+            app.state::<ClickerState>().armed.store(false, Ordering::SeqCst);
+            emit_status(app);
+        }
     }
 }
 
@@ -442,9 +500,8 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, w_param: usize, l_param:
     CallNextHookEx(0, code, w_param, l_param)
 }
 
-/// Raw low-level mouse-hook callback. We only care about `WM_MOUSEWHEEL`.
 unsafe extern "system" fn mouse_hook_proc(code: i32, w_param: usize, l_param: isize) -> isize {
-    if code >= 0 && w_param == WM_MOUSEWHEEL as usize {
+    if code >= 0 {
         #[repr(C)]
         struct MsllHookStruct {
             pt_x: i32,
@@ -456,12 +513,30 @@ unsafe extern "system" fn mouse_hook_proc(code: i32, w_param: usize, l_param: is
         }
 
         let info = &*(l_param as *const MsllHookStruct);
-        let delta = (info.mouse_data >> 16) as i16;
-        let now = now_epoch_ms();
-        if delta > 0 {
-            SCROLL_UP_AT.store(now, Ordering::SeqCst);
-        } else if delta < 0 {
-            SCROLL_DOWN_AT.store(now, Ordering::SeqCst);
+        let is_injected = (info.flags & LLMHF_INJECTED) != 0;
+
+        // Track physical button state; ignore injected events so the autoclicker's
+        // own simulated UP events don't cancel click-while-held.
+        if !is_injected {
+            match w_param as u32 {
+                WM_LBUTTONDOWN => PHYSICAL_LBUTTON_DOWN.store(true, Ordering::SeqCst),
+                WM_LBUTTONUP => PHYSICAL_LBUTTON_DOWN.store(false, Ordering::SeqCst),
+                WM_MBUTTONDOWN => PHYSICAL_MBUTTON_DOWN.store(true, Ordering::SeqCst),
+                WM_MBUTTONUP => PHYSICAL_MBUTTON_DOWN.store(false, Ordering::SeqCst),
+                WM_RBUTTONDOWN => PHYSICAL_RBUTTON_DOWN.store(true, Ordering::SeqCst),
+                WM_RBUTTONUP => PHYSICAL_RBUTTON_DOWN.store(false, Ordering::SeqCst),
+                _ => {}
+            }
+        }
+
+        if w_param == WM_MOUSEWHEEL as usize {
+            let delta = (info.mouse_data >> 16) as i16;
+            let now = now_epoch_ms();
+            if delta > 0 {
+                SCROLL_UP_AT.store(now, Ordering::SeqCst);
+            } else if delta < 0 {
+                SCROLL_DOWN_AT.store(now, Ordering::SeqCst);
+            }
         }
     }
 

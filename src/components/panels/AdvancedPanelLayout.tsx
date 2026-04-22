@@ -269,6 +269,13 @@ export default function AdvancedPanelLayout({
                 </div>
               </div>
               <div className="adv-row" style={{ marginTop: rowSpacing }}>
+                <span className="adv-label">Click Hold</span>
+                <ToggleBtn
+                  value={settings.clickWhileHeld}
+                  onChange={(v) => update({ clickWhileHeld: v })}
+                />
+              </div>
+              <div className="adv-row" style={{ marginTop: rowSpacing }}>
                 <span className="adv-label">Mouse Button</span>
                 <div className="simple-seg-group">
                   {(["Left", "Middle", "Right"] as const).map((b) => (
@@ -676,6 +683,13 @@ export default function AdvancedPanelLayout({
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="adv-row" style={{ marginTop: rowSpacing }}>
+              <span className="adv-label">Click Hold</span>
+              <ToggleBtn
+                value={settings.clickWhileHeld}
+                onChange={(v) => update({ clickWhileHeld: v })}
+              />
             </div>
             <div className="adv-row" style={{ marginTop: rowSpacing }}>
               <span className="adv-label">Mouse Button</span>

@@ -70,6 +70,7 @@ async function getClampedPanelSize(
 
 const DEFAULT_STATUS: ClickerStatus = {
   running: false,
+  armed: false,
   clickCount: 0,
   lastError: null,
   stopReason: null,
@@ -464,6 +465,7 @@ export default function App() {
         tab={tab}
         setTab={handleTabChange}
         running={status.running}
+        armed={status.armed}
         stopReason={
           settings.showStopReason && tab === "advanced"
             ? status.stopReason

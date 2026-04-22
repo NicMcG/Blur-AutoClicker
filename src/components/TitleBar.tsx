@@ -12,6 +12,7 @@ interface Props {
   tab: Tab;
   setTab: (t: Tab) => void;
   running: boolean;
+  armed: boolean;
   stopReason?: string | null;
   onRequestClose: () => Promise<void>;
 }
@@ -91,6 +92,7 @@ export default function TitleBar({
   tab,
   setTab,
   running,
+  armed,
   stopReason,
   onRequestClose,
 }: Props) {
@@ -117,6 +119,7 @@ export default function TitleBar({
       }
       data-tauri-drag-region
       data-running={running}
+      data-armed={armed}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
         <button
