@@ -59,6 +59,7 @@ pub struct ClickerSettings {
     pub show_stop_reason: bool,
     pub show_stop_overlay: bool,
     pub strict_hotkey_modifiers: bool,
+    pub click_while_held: bool,
 }
 
 impl Default for ClickerSettings {
@@ -111,6 +112,7 @@ impl Default for ClickerSettings {
             show_stop_reason: true,
             show_stop_overlay: true,
             strict_hotkey_modifiers: false,
+            click_while_held: false,
         }
     }
 }

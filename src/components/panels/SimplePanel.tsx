@@ -126,6 +126,20 @@ export default function SimplePanel({ settings, update }: SimplePanelProps) {
           >
             {t(`options.mode.${settings.mode}` as TranslationKey)}
           </button>
+          <div className="vertical-devider" />
+          <button
+            type="button"
+            className={`simple-cycle-btn${settings.clickWhileHeld ? " active" : ""}`}
+            title="When enabled, the hotkey arms/disarms the clicker. Autoclicking only happens while the configured mouse button is physically held down."
+            style={{ whiteSpace: "nowrap", height: "auto" }}
+            onClick={(e) =>
+              cycleWithClick(e, () =>
+                update({ clickWhileHeld: !settings.clickWhileHeld }),
+              )
+            }
+          >
+            {settings.clickWhileHeld ? "Click hold on" : "Click hold off"}
+          </button>
         </div>
       </div>
 

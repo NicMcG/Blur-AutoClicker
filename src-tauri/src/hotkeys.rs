@@ -1,3 +1,4 @@
+use crate::engine::worker::emit_status;
 use crate::engine::worker::now_epoch_ms;
 use crate::engine::worker::start_clicker_inner;
 use crate::engine::worker::stop_clicker_inner;
@@ -153,11 +154,14 @@ pub fn start_hotkey_listener(app: AppHandle) {
         let mut was_pressed = false;
 
         loop {
-            let (binding, strict) = {
+            let (binding, strict, click_while_held, mouse_button_str) = {
                 let state = app.state::<ClickerState>();
                 let binding = state.registered_hotkey.lock().unwrap().clone();
-                let strict = state.settings.lock().unwrap().strict_hotkey_modifiers;
-                (binding, strict)
+                let settings = state.settings.lock().unwrap();
+                let strict = settings.strict_hotkey_modifiers;
+                let click_while_held = settings.click_while_held;
+                let mouse_button_str = settings.mouse_button.clone();
+                (binding, strict, click_while_held, mouse_button_str)
             };
 
             let currently_pressed = binding
@@ -212,17 +216,56 @@ pub fn start_hotkey_listener(app: AppHandle) {
             }
 
             was_pressed = currently_pressed;
+
+            // Poll mouse button state for click-while-held mode
+            if click_while_held {
+                let state = app.state::<ClickerState>();
+                let armed = state.armed.load(Ordering::SeqCst);
+                let running = state.running.load(Ordering::SeqCst);
+                drop(state);
+
+                if armed {
+                    let mouse_held = match mouse_button_str.as_str() {
+                        "Right" => PHYSICAL_RBUTTON_DOWN.load(Ordering::SeqCst),
+                        "Middle" => PHYSICAL_MBUTTON_DOWN.load(Ordering::SeqCst),
+                        _ => PHYSICAL_LBUTTON_DOWN.load(Ordering::SeqCst),
+                    };
+
+                    if mouse_held && !running {
+                        let _ = start_clicker_inner(&app);
+                    } else if !mouse_held && running {
+                        let _ = stop_clicker_inner(&app, Some(String::from("Mouse button released")));
+                    }
+                } else if running {
+                    let _ = stop_clicker_inner(&app, Some(String::from("Disarmed")));
+                }
+            }
+
             std::thread::sleep(Duration::from_millis(12));
         }
     });
 }
 
 pub fn handle_hotkey_pressed(app: &AppHandle) {
-    let mode = {
+    let (mode, click_while_held) = {
         let state = app.state::<ClickerState>();
-        let mode = state.settings.lock().unwrap().mode.clone();
-        mode
+        let settings = state.settings.lock().unwrap();
+        (settings.mode.clone(), settings.click_while_held)
     };
+
+    if click_while_held && mode == "Toggle" {
+        let state = app.state::<ClickerState>();
+        let was_armed = state.armed.fetch_xor(true, Ordering::SeqCst);
+        drop(state);
+        if was_armed {
+            // Disarming: stop the clicker if it was running from mouse hold
+            let _ = stop_clicker_inner(app, Some(String::from("Disarmed")));
+        } else {
+            // Just armed: emit status so UI reflects the armed state
+            emit_status(app);
+        }
+        return;
+    }
 
     if mode == "Toggle" {
         let _ = toggle_clicker_inner(app);
@@ -232,14 +275,18 @@ pub fn handle_hotkey_pressed(app: &AppHandle) {
 }
 
 pub fn handle_hotkey_released(app: &AppHandle) {
-    let mode = {
+    let (mode, click_while_held) = {
         let state = app.state::<ClickerState>();
-        let mode = state.settings.lock().unwrap().mode.clone();
-        mode
+        let settings = state.settings.lock().unwrap();
+        (settings.mode.clone(), settings.click_while_held)
     };
 
     if mode == "Hold" {
         let _ = stop_clicker_inner(app, Some(String::from("Stopped from hold hotkey")));
+        if click_while_held {
+            app.state::<ClickerState>().armed.store(false, Ordering::SeqCst);
+            emit_status(app);
+        }
     }
 }
 

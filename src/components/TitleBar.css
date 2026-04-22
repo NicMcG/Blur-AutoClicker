@@ -32,6 +32,11 @@
     text-shadow 0.2s ease;
 }
 
+.window-title-background[data-armed="true"] .window-title {
+  color: var(--accent-yellow);
+  text-shadow: 0 0 0.625rem rgba(254, 188, 46, 0.2), 0 0 1.125rem rgba(254, 188, 46, 0.12);
+}
+
 .window-title-background[data-running="true"] .window-title {
   color: var(--accent-green-strong);
   text-shadow:

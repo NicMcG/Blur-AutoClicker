@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct ClickerState {
     pub running: Arc<AtomicBool>,
+    pub armed: Arc<AtomicBool>,
     pub run_generation: AtomicU64,
     pub settings: Mutex<ClickerSettings>,
     pub last_error: Mutex<Option<String>>,
@@ -21,6 +22,7 @@ pub struct ClickerState {
 #[serde(rename_all = "camelCase")]
 pub struct ClickerStatusPayload {
     pub running: bool,
+    pub armed: bool,
     pub click_count: i64,
     pub last_error: Option<String>,
     pub stop_reason: Option<String>,

@@ -82,6 +82,7 @@ async function getClampedPanelSize(
 
 const DEFAULT_STATUS: ClickerStatus = {
   running: false,
+  armed: false,
   clickCount: 0,
   lastError: null,
   stopReason: null,

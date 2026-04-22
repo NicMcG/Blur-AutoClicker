@@ -91,6 +91,10 @@ pub fn update_settings(
 
     *state.settings.lock().unwrap() = settings.clone();
 
+    if click_while_held_disabled {
+        state.armed.store(false, Ordering::SeqCst);
+    }
+
     if !was_initialized {
         state.settings_initialized.store(true, Ordering::SeqCst);
         log::info!("[Settings] First update_settings — initialized, skipping overlay");

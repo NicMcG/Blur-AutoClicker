@@ -27,6 +27,7 @@ export type {
 
 export interface ClickerStatus {
   running: boolean;
+  armed: boolean;
   clickCount: number;
   lastError: string | null;
   stopReason: string | null;

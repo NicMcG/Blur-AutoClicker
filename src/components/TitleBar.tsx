@@ -21,6 +21,7 @@ interface Props {
   tab: Tab;
   setTab: (t: Tab) => void;
   running: boolean;
+  armed: boolean;
   stopReason?: string | null;
   isAlwaysOnTop: boolean;
   onToggleAlwaysOnTop: () => Promise<void>;
@@ -102,6 +103,7 @@ export default function TitleBar({
   tab,
   setTab,
   running,
+  armed,
   stopReason,
   isAlwaysOnTop,
   onToggleAlwaysOnTop,
@@ -120,6 +122,7 @@ export default function TitleBar({
       }
       data-tauri-drag-region
       data-running={running}
+      data-armed={armed}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
         <button

@@ -265,6 +265,7 @@ pub fn current_status(app: &AppHandle) -> ClickerStatusPayload {
 
     ClickerStatusPayload {
         running: state.running.load(Ordering::SeqCst),
+        armed: state.armed.load(Ordering::SeqCst),
         click_count: get_click_count(),
         last_error,
         stop_reason,
